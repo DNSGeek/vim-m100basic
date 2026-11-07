@@ -1,0 +1,169 @@
+*m100basic.txt*  Syntax and tokenised file support for TRS-80 Model 100 BASIC
+
+Author:  Thomas Knox
+License: GPL-2.0
+
+==============================================================================
+CONTENTS                                              *m100basic-contents*
+
+    1. Introduction ........................... |m100basic-intro|
+    2. External tools ......................... |m100basic-tools|
+    3. Filetype detection ..................... |m100basic-ftdetect|
+    4. Commands ............................... |m100basic-commands|
+    5. Options ................................ |m100basic-options|
+    6. Highlight groups ....................... |m100basic-groups|
+    7. Limits ................................. |m100basic-limits|
+
+==============================================================================
+1. INTRODUCTION                                          *m100basic-intro*
+
+Syntax highlighting for the BASIC in ROM on the TRS-80 Model 100 and 102,
+TANDY 200, Kyotronic KC-85 and Olivetti M-10, plus transparent editing of
+tokenised *.BA programs.
+
+The NEC PC-8201 and PC-8300 are not covered. They run N82 BASIC, which
+assigns several of the same token bytes to different keywords.
+
+Model 100 BASIC crunches keywords out of unspaced text, as Commodore BASIC
+does and for the same Microsoft reasons, so keywords are matched without a
+word boundary: FOR colours inside FORI. The scan is leftmost-first, which is
+what the ROM does, so FOREMAN crunches to FOR + EMAN rather than
+FOR + REM + AN.
+
+String contents, REM and ' comments, and DATA operands are left alone,
+because the ROM does not crunch those either.
+
+==============================================================================
+2. EXTERNAL TOOLS                                        *m100basic-tools*
+
+A .BA file is a tokenised program. Converting it is delegated to two
+community tools rather than reimplemented in Vim script:
+
+    detok85     .BA -> ASCII     https://github.com/bkw777/detok85
+    tokenize    ASCII -> .BA     https://github.com/hackerb9/tokenize
+
+Put both on your $PATH and .BA files open and save as text.
+
+Without detok85, a .BA still opens: the raw bytes are shown, the buffer is
+set 'nomodifiable', and a warning says why. Without tokenize, a write to a
+.BA is REFUSED and 'modified' is left set, rather than writing a file the
+machine cannot load.
+
+Both commands are resolved with |executable()| on their first word, so a
+wrapper works: >
+    let g:m100basic_detokenize_cmd = 'python3 /opt/detok85/detok85.py'
+<
+==============================================================================
+3. FILETYPE DETECTION                                 *m100basic-ftdetect*
+
+*.BA is claimed outright.
+
+*.DO is not. Vim's own filetype.vim maps *.do to Stata, and on a real machine
+a .DO file is as likely to be prose as a program, so a .DO is claimed only
+when its first line starts with a line number. See |g:m100basic_claim_do| to
+take every .DO regardless.
+
+A .DO that does not exist yet has no first line to sniff, so a new program
+needs :setf m100basic, or that option.
+
+*.txt, *.lst and *.bas are sniffed for keywords unique to this machine
+(MAXFILES, LCOPY, LFILES, CSRLIN, DAY$, IPL, POWER, MENU, HIMEM, MAXRAM,
+DSKI$) and claimed with |:setfiletype|, which leaves a buffer alone if
+another plugin got there first.
+
+Each pattern spells out both cases in one pattern - *.[bB][aA] rather than
+*.ba,*.BA - because with 'fileignorecase' on, the default on macOS, one file
+matches both of those and every hook would fire twice.
+
+==============================================================================
+4. COMMANDS                                           *m100basic-commands*
+
+                                                            *:M100Tokenize*
+:M100Tokenize[!] [path]
+        Write the buffer as a tokenised .BA file. With no argument the
+        buffer's own name is used with a .BA extension. Refuses to overwrite
+        an existing file unless [!] is given.
+
+                                                              *:M100Deploy*
+:M100Deploy[!] [dir]
+        Write the program to [dir], or to |g:m100basic_card_dir|. A .BA
+        buffer goes out tokenised; anything else goes out as CRLF text,
+        which is what the machine's TEXT editor expects. [!] forces
+        tokenising whatever the buffer is called.
+
+        The name is upper-cased, stripped of anything that is not a letter
+        or a digit, and truncated to the 6.2 filename TS-DOS and the Super
+        Backpack show, so MyProgram.do lands as MYPROG.DO.
+
+Both commands are global, not buffer-local: a brand-new .DO never reaches
+filetype m100basic, and writing a new program to a card is exactly when they
+are wanted.
+
+==============================================================================
+5. OPTIONS                                             *m100basic-options*
+
+                                                  *g:m100basic_claim_do*
+g:m100basic_claim_do        default 0
+        1 claims every *.do and *.DO for m100basic, overriding Stata.
+
+                                             *g:m100basic_transparent_ba*
+g:m100basic_transparent_ba  default 1
+        0 disables the .BA read and write hooks entirely. A .BA then opens
+        as whatever Vim makes of its bytes.
+
+                                           *g:m100basic_detokenize_cmd*
+g:m100basic_detokenize_cmd  default "detok85"
+        Command run as `<cmd> FILE`, expected to print ASCII BASIC.
+
+                                             *g:m100basic_tokenize_cmd*
+g:m100basic_tokenize_cmd    default "tokenize"
+        Command run as `<cmd> SRC.DO DEST.BA`.
+
+                                                 *g:m100basic_card_dir*
+g:m100basic_card_dir        default ""
+        Directory |:M100Deploy| writes to, e.g. "/Volumes/M100".
+
+                                              *g:m100basic_colorcolumn*
+g:m100basic_colorcolumn     default 40
+        Where to put the 'colorcolumn' marker. The LCD is 40 columns; a
+        logical line may run to 255 characters, which the machine accepts
+        and wraps. 0 turns the marker off.
+
+==============================================================================
+6. HIGHLIGHT GROUPS                                     *m100basic-groups*
+
+    m100basicComment        Comment     REM and ' to end of line
+    m100basicTodo           Todo        TODO FIXME XXX NOTE in a comment
+    m100basicStatement      Statement   PRINT, POKE, OPEN, MENU, ...
+    m100basicConditional    Conditional IF THEN ELSE
+    m100basicRepeat         Repeat      FOR TO STEP NEXT
+    m100basicClause         Keyword     USING OFF AS OUTPUT APPEND
+    m100basicFunction       Function    CHR$, INSTR, VARPTR, TAB(, ...
+    m100basicReserved       Identifier  TIME$ DATE$ DAY$ ERL ERR HIMEM ...
+    m100basicOperator       Operator    AND OR XOR EQV IMP MOD NOT + - * / ^ \
+    m100basicString         String      quoted text
+    m100basicData           Constant    DATA operands, uncrunched
+    m100basicNumber         Number      decimal, &H hex, &O octal, E/D exponents
+    m100basicFilenumber     Number      #1 after a channel keyword
+    m100basicLineNumber     LineNr      the line number a statement opens with
+    m100basicLineRef        Label       a jump target after GOTO, THEN, ...
+
+All are linked with `hi def link`, so a colorscheme or your vimrc overrides
+them.
+
+==============================================================================
+7. LIMITS                                               *m100basic-limits*
+
+Highlighting only: no syntax checking, no renumbering, no variable analysis.
+
+Two machine rules bite silently and are NOT checked here, because neither is
+visible one line at a time:
+
+    - Only the first two characters of a variable name are significant, so
+      COUNT and COLOUR are the same variable.
+    - A name may not contain a keyword, because the keyword is what gets
+      crunched. COST is COS + T.
+
+.CO files are 8085 machine code and out of scope.
+
+ vim:tw=78:ts=8:noet:ft=help:norl:
